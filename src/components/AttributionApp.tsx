@@ -8,10 +8,11 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Upload, Download, Loader2, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
-import { AIService } from '../services/ai';
+import { Upload, Download, Loader2, CheckCircle, AlertCircle, ArrowLeft, BarChart3 } from 'lucide-react';
+import { OptimizedAIService } from '../services/optimizedAI';
 import { FileUtils } from '../utils/fileUtils';
 import { AttributionResult, ProcessingMode } from '../../shared/types';
+import { PerformanceDashboard } from './PerformanceDashboard';
 
 interface AttributionAppProps {
   onBack: () => void;
@@ -20,6 +21,7 @@ interface AttributionAppProps {
 
 export const AttributionApp: React.FC<AttributionAppProps> = ({ onBack, secteurStructure }) => {
   const [mode, setMode] = useState<ProcessingMode>('single');
+  const [showDashboard, setShowDashboard] = useState(false);
   const [singleArticle, setSingleArticle] = useState('');
   const [batchFile, setBatchFile] = useState<File | null>(null);
   const [results, setResults] = useState<AttributionResult[]>([]);
@@ -29,7 +31,7 @@ export const AttributionApp: React.FC<AttributionAppProps> = ({ onBack, secteurS
   const [success, setSuccess] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const aiService = AIService.getInstance();
+  const aiService = OptimizedAIService.getInstance();
 
   const handleSingleAttribution = async () => {
     if (!singleArticle.trim()) {
@@ -103,44 +105,28 @@ export const AttributionApp: React.FC<AttributionAppProps> = ({ onBack, secteurS
 
       setProgress(20);
 
-      // Traitement des articles
-      const batchResults: AttributionResult[] = [];
-      const total = articles.length;
-
-      for (let i = 0; i < articles.length; i++) {
-        const article = articles[i];
-        
-        try {
-          const result = await aiService.attributeSecteur(article, secteurStructure);
-          
-          batchResults.push({
-            article,
-            secteurCode: result.secteurCode,
-            secteurLibelle: result.secteurLibelle,
-            confidence: result.confidence,
-            reasoning: result.reasoning
-          });
-          
-        } catch (err) {
-          batchResults.push({
-            article,
-            secteurCode: 'ERROR',
-            secteurLibelle: 'ERREUR DE TRAITEMENT',
-            confidence: 0,
-            reasoning: err instanceof Error ? err.message : 'Erreur inconnue'
-          });
+      // Traitement optimisé des articles
+      const aiResults = await aiService.attributeBatchOptimized(
+        articles, 
+        secteurStructure,
+        (progressPercent) => {
+          const totalProgress = 20 + (progressPercent * 0.7);
+          setProgress(totalProgress);
         }
+      );
 
-        // Mise à jour du progrès
-        const progressPercent = 20 + ((i + 1) / total) * 70;
-        setProgress(progressPercent);
-        
-        // Mise à jour des résultats en temps réel
-        setResults([...batchResults]);
-      }
+      const batchResults: AttributionResult[] = aiResults.map((result, index) => ({
+        article: articles[index],
+        secteurCode: result.secteurCode,
+        secteurLibelle: result.secteurLibelle,
+        confidence: result.confidence,
+        reasoning: result.reasoning
+      }));
+
+      setResults(batchResults);
 
       setProgress(100);
-      setSuccess(`Traitement terminé ! ${batchResults.filter(r => r.secteurCode !== 'ERROR').length}/${total} articles traités avec succès.`);
+      setSuccess(`Traitement terminé ! ${batchResults.filter(r => r.secteurCode !== 'ERROR').length}/${articles.length} articles traités avec succès.`);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors du traitement du lot');
@@ -179,6 +165,35 @@ export const AttributionApp: React.FC<AttributionAppProps> = ({ onBack, secteurS
     return 'destructive';
   };
 
+  const handleClearCache = () => {
+    setSuccess('Cache vidé avec succès !');
+    setTimeout(() => setSuccess(null), 3000);
+  };
+
+  if (showDashboard) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+        <div className="container mx-auto px-4 py-8">
+          <div className="mb-8">
+            <Button 
+              variant="ghost" 
+              onClick={() => setShowDashboard(false)}
+              className="mb-4"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Retour à l'attribution
+            </Button>
+          </div>
+          <PerformanceDashboard 
+            results={results}
+            isProcessing={isProcessing}
+            onClearCache={handleClearCache}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       <div className="container mx-auto px-4 py-8">
@@ -193,12 +208,26 @@ export const AttributionApp: React.FC<AttributionAppProps> = ({ onBack, secteurS
             Retour
           </Button>
           
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            Attribution Automatique des Secteurs
-          </h1>
-          <p className="text-gray-600 dark:text-gray-300 mt-2">
-            Classifiez vos articles selon la structure CYRUS avec l'IA
-          </p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                Attribution Automatique des Secteurs
+              </h1>
+              <p className="text-gray-600 dark:text-gray-300 mt-2">
+                Classifiez vos articles selon la structure CYRUS avec l'IA
+              </p>
+            </div>
+            {results.length > 0 && (
+              <Button 
+                variant="outline"
+                onClick={() => setShowDashboard(true)}
+                className="ml-4"
+              >
+                <BarChart3 className="mr-2 h-4 w-4" />
+                Dashboard
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Alerts */}
