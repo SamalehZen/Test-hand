@@ -37,7 +37,8 @@ export interface Article {
 
 export interface AttributionResult {
   article: string;
-  hierarchie: HierarchieComplete;
+  secteurCode: string;
+  secteurLibelle: string;
   confidence: number;
   reasoning?: string;
 }
@@ -56,7 +57,8 @@ export interface AIRequest {
 }
 
 export interface AIResponse {
-  hierarchie: HierarchieComplete;
+  secteurCode: string;
+  secteurLibelle: string;
   confidence: number;
   reasoning: string;
 }
