@@ -8,11 +8,12 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Upload, Download, Loader2, CheckCircle, AlertCircle, ArrowLeft, BarChart3 } from 'lucide-react';
+import { Upload, Download, Loader2, CheckCircle, AlertCircle, ArrowLeft, BarChart3, Key } from 'lucide-react';
 import { OptimizedAIService } from '../services/optimizedAI';
 import { FileUtils } from '../utils/fileUtils';
 import { AttributionResult, ProcessingMode } from '../../shared/types';
 import { PerformanceDashboard } from './PerformanceDashboard';
+import { ApiKeyModal } from './ApiKeyModal';
 
 interface AttributionAppProps {
   onBack: () => void;
@@ -29,6 +30,8 @@ export const AttributionApp: React.FC<AttributionAppProps> = ({ onBack, secteurS
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const aiService = OptimizedAIService.getInstance();
@@ -60,7 +63,15 @@ export const AttributionApp: React.FC<AttributionAppProps> = ({ onBack, secteurS
       setSuccess('Attribution réalisée avec succès !');
       
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur lors de l\'attribution');
+      const errorMessage = err instanceof Error ? err.message : 'Erreur lors de l\'attribution';
+      
+      // Vérifier si c'est une erreur d'authentification
+      if (errorMessage.includes('401') || errorMessage.includes('authentification')) {
+        setApiKeyError(errorMessage);
+        setShowApiKeyModal(true);
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -129,7 +140,15 @@ export const AttributionApp: React.FC<AttributionAppProps> = ({ onBack, secteurS
       setSuccess(`Traitement terminé ! ${batchResults.filter(r => r.secteurCode !== 'ERROR').length}/${articles.length} articles traités avec succès.`);
 
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur lors du traitement du lot');
+      const errorMessage = err instanceof Error ? err.message : 'Erreur lors du traitement du lot';
+      
+      // Vérifier si c'est une erreur d'authentification
+      if (errorMessage.includes('401') || errorMessage.includes('authentification')) {
+        setApiKeyError(errorMessage);
+        setShowApiKeyModal(true);
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -163,6 +182,17 @@ export const AttributionApp: React.FC<AttributionAppProps> = ({ onBack, secteurS
     if (confidence >= 0.8) return 'default';
     if (confidence >= 0.6) return 'secondary';
     return 'destructive';
+  };
+
+  const handleApiKeySet = (apiKey: string) => {
+    aiService.setApiKey(apiKey);
+    setApiKeyError(null);
+    setShowApiKeyModal(false);
+    setSuccess('Clé API configurée avec succès ! Vous pouvez maintenant relancer le traitement.');
+  };
+
+  const handleConfigureApiKey = () => {
+    setShowApiKeyModal(true);
   };
 
   const handleClearCache = () => {
@@ -217,18 +247,30 @@ export const AttributionApp: React.FC<AttributionAppProps> = ({ onBack, secteurS
                 Classifiez vos articles selon la structure CYRUS avec l'IA
               </p>
             </div>
-            {results.length > 0 && (
+            <div className="flex gap-2">
               <Button 
                 variant="outline"
-                onClick={() => setShowDashboard(true)}
-                className="ml-4"
+                onClick={handleConfigureApiKey}
+                size="sm"
               >
-                <BarChart3 className="mr-2 h-4 w-4" />
-                Dashboard
+                <Key className="mr-2 h-4 w-4" />
+                Configurer API
               </Button>
-            )}
+              {results.length > 0 && (
+                <Button 
+                  variant="outline"
+                  onClick={() => setShowDashboard(true)}
+                >
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  Dashboard
+                </Button>
+              )}
+            </div>
           </div>
         </div>
+
+        {/* Configuration API */}
+        <ApiKeyConfig />
 
         {/* Alerts */}
         {error && (
@@ -462,6 +504,14 @@ export const AttributionApp: React.FC<AttributionAppProps> = ({ onBack, secteurS
           </Card>
         )}
       </div>
+
+      {/* Modal de configuration de clé API */}
+      <ApiKeyModal
+        isOpen={showApiKeyModal}
+        onClose={() => setShowApiKeyModal(false)}
+        onApiKeySet={handleApiKeySet}
+        error={apiKeyError}
+      />
     </div>
   );
 };

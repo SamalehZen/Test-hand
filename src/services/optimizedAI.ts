@@ -144,18 +144,93 @@ class ResultValidator {
 export class OptimizedAIService {
   private static instance: OptimizedAIService;
   private cacheManager = new CacheManager();
-  private readonly API_KEY = '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';
+  private readonly API_KEY: string;
   private readonly MODEL = 'moonshotai/kimi-k2:free';
   private readonly BASE_URL = 'https://openrouter.ai/api/v1/chat/completions';
   private readonly MAX_CONCURRENT = 5;
   private readonly RETRY_ATTEMPTS = 3;
   private readonly RETRY_DELAY = 1000;
 
+  constructor() {
+    // Essayer plusieurs sources pour la clé API
+    this.API_KEY = this.getApiKey();
+    if (!this.API_KEY) {
+      console.error('❌ Clé API OpenRouter manquante. Veuillez configurer VITE_OPENROUTER_API_KEY ou utiliser une clé par défaut.');
+    }
+  }
+
+  private getApiKey(): string {
+    // 1. Variable d'environnement Vite
+    if (import.meta.env?.VITE_OPENROUTER_API_KEY) {
+      return import.meta.env.VITE_OPENROUTER_API_KEY;
+    }
+    
+    // 2. Variable d'environnement standard
+    if (typeof process !== 'undefined' && process.env?.OPENROUTER_API_KEY) {
+      return process.env.OPENROUTER_API_KEY;
+    }
+    
+    // 3. Stockage local du navigateur
+    if (typeof localStorage !== 'undefined') {
+      const storedKey = localStorage.getItem('openrouter_api_key');
+      if (storedKey) {
+        return storedKey;
+      }
+    }
+    
+    // 4. Demander à l'utilisateur
+    return this.promptForApiKey();
+  }
+
+  private promptForApiKey(): string {
+    const key = prompt(`
+🔑 Configuration requise - Clé API OpenRouter
+
+Pour utiliser les fonctionnalités IA optimisées, veuillez :
+
+1. Créer un compte sur https://openrouter.ai
+2. Obtenir votre clé API
+3. Saisir votre clé ci-dessous
+
+Votre clé API OpenRouter :`);
+    
+    if (key && key.trim()) {
+      // Sauvegarder dans le localStorage pour les prochaines utilisations
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('openrouter_api_key', key.trim());
+      }
+      return key.trim();
+    }
+    
+    throw new Error('Clé API OpenRouter requise pour utiliser les fonctionnalités IA');
+  }
+
   public static getInstance(): OptimizedAIService {
     if (!OptimizedAIService.instance) {
       OptimizedAIService.instance = new OptimizedAIService();
     }
     return OptimizedAIService.instance;
+  }
+
+  // Méthode pour reconfigurer la clé API
+  public reconfigureApiKey(): void {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('openrouter_api_key');
+    }
+    this.API_KEY = this.promptForApiKey();
+  }
+
+  // Méthode pour vérifier si la clé API est configurée
+  public isApiKeyConfigured(): boolean {
+    return !!this.API_KEY && this.API_KEY.length > 0;
+  }
+
+  // Méthode pour définir manuellement la clé API
+  public setApiKey(key: string): void {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('openrouter_api_key', key);
+    }
+    (this as any).API_KEY = key;
   }
 
   async attributeSecteur(article: string, structure: string): Promise<AIResponse> {
@@ -260,7 +335,39 @@ export class OptimizedAIService {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      let errorMessage = `Erreur HTTP ${response.status}`;
+      
+      try {
+        const errorData = await response.json();
+        if (errorData.error?.message) {
+          errorMessage += `: ${errorData.error.message}`;
+        }
+      } catch (e) {
+        // Ignore JSON parsing errors
+      }
+      
+      // Messages d'erreur spécifiques
+      switch (response.status) {
+        case 401:
+          errorMessage = `🔑 Erreur d'authentification (401): Clé API OpenRouter invalide ou expirée. 
+          
+Veuillez :
+1. Vérifier votre clé API sur https://openrouter.ai
+2. Vous assurer qu'elle est active et a des crédits
+3. Recharger la page pour saisir une nouvelle clé`;
+          break;
+        case 403:
+          errorMessage = `🚫 Accès refusé (403): Votre clé API n'a pas les permissions nécessaires`;
+          break;
+        case 429:
+          errorMessage = `⏱️ Limite de taux atteinte (429): Trop de requêtes. Veuillez patienter quelques secondes`;
+          break;
+        case 500:
+          errorMessage = `🔧 Erreur serveur (500): Problème temporaire du service OpenRouter`;
+          break;
+      }
+      
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
