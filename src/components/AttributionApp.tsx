@@ -269,8 +269,7 @@ export const AttributionApp: React.FC<AttributionAppProps> = ({ onBack, secteurS
           </div>
         </div>
 
-        {/* Configuration API */}
-        <ApiKeyConfig />
+        {/* Configuration API - Supprimé car remplacé par le modal */}
 
         {/* Alerts */}
         {error && (
